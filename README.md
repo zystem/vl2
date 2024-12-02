@@ -4,4 +4,6 @@
 
 3. Open vl2 URI, select wanted values from dropdown menus, and press "Generate URI"
 
+4. Press "EXECUTE QUERY"
+
 ![image](https://github.com/user-attachments/assets/bc355836-494d-4a0e-a706-2242aab54223)
