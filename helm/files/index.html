@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic URI Builder</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        .menu-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #333;
+            color: white;
+            padding: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .menu-bar label {
+            font-weight: bold;
+        }
+        .menu-bar select, .menu-bar button {
+            padding: 5px;
+            font-size: 14px;
+        }
+        iframe {
+            width: 100%;
+            height: calc(100vh - 70px);
+            border: none;
+            margin-top: 70px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="menu-bar">
+        <label for="field1">Field1:</label>
+        <select id="field1"></select>
+        <label for="value1" class="value-label hidden">Value1:</label>
+        <select id="value1" class="hidden"></select>
+
+        <label for="field2">Field2:</label>
+        <select id="field2"></select>
+        <label for="value2" class="value-label hidden">Value2:</label>
+        <select id="value2" class="hidden"></select>
+
+        <label for="field3">Field3:</label>
+        <select id="field3"></select>
+        <label for="value3" class="value-label hidden">Value3:</label>
+        <select id="value3" class="hidden"></select>
+
+        <button id="generateButton">Generate URI</button>
+    </div>
+    <iframe id="resultFrame" src=""></iframe>
+
+    <script>
+        const field1 = document.getElementById('field1');
+        const value1 = document.getElementById('value1');
+        const field2 = document.getElementById('field2');
+        const value2 = document.getElementById('value2');
+        const field3 = document.getElementById('field3');
+        const value3 = document.getElementById('value3');
+        const resultFrame = document.getElementById('resultFrame');
+        const generateButton = document.getElementById('generateButton');
+
+        const currentDomain = window.location.origin.replace(/^https?:\/\/([^/]+)\.([^/]+)$/, (_, left, rest) =>`//${left.replace("2", "")}.${rest}`);
+
+        let allFields = [];
+
+        // Fetch field names
+        async function fetchFieldNames() {
+            const response = await fetch(`${currentDomain}/select/logsql/stream_field_names`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'query=error&start=1d'
+            });
+            const data = await response.json();
+            return data.values.map(item => item.value).filter(field => field !== 'stream'); // Исключить "stream"
+        }
+
+        // Fetch field values
+        async function fetchFieldValues(field) {
+            if (field === '<empty>') return [];
+            const response = await fetch(`${currentDomain}/select/logsql/stream_field_values`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `query=error&start=1d&field=${field}`
+            });
+            const data = await response.json();
+            return data.values.map(item => item.value);
+        }
+
+        // Populate fields dropdowns
+        async function populateFields() {
+            allFields = await fetchFieldNames();
+
+            // Add <empty> option to all fields (at the end)
+            allFields.push('<empty>');
+
+            [field1, field2, field3].forEach((field, index) => {
+                const defaultField = allFields[index] || '<empty>';
+                field.innerHTML = '';
+                allFields.forEach(f => field.add(new Option(f, f)));
+                field.value = defaultField;
+            });
+
+            updateValues(field1, value1);
+            updateValues(field2, value2);
+            updateValues(field3, value3);
+            toggleValueVisibility();
+        }
+
+        // Update dropdown options dynamically
+        function updateFieldsDropdown() {
+            const selectedFields = [field1.value, field2.value, field3.value].filter(f => f !== '<empty>');
+            [field1, field2, field3].forEach((field, index) => {
+                const otherSelected = selectedFields.filter((_, i) => i !== index); // Exclude current field
+                const availableFields = allFields.filter(f => !otherSelected.includes(f) || f === field.value || f === '<empty>');
+                const currentValue = field.value;
+                field.innerHTML = '';
+                availableFields.forEach(f => field.add(new Option(f, f)));
+
+                // Preserve the current selection if it's still valid, otherwise reset to the first option
+                if (availableFields.includes(currentValue)) {
+                    field.value = currentValue;
+                } else {
+                    field.selectedIndex = 0;
+                }
+            });
+        }
+
+        // Update value dropdowns when a field is selected
+        async function updateValues(fieldSelect, valueSelect) {
+            const field = fieldSelect.value;
+            const values = await fetchFieldValues(field);
+            valueSelect.innerHTML = '';
+            if (field !== '<empty>') {
+                values.forEach(v => valueSelect.add(new Option(v, v)));
+            }
+        }
+
+        // Show/hide value fields based on field selection
+        function toggleValueVisibility() {
+            [
+                { field: field1, value: value1 },
+                { field: field2, value: value2 },
+                { field: field3, value: value3 }
+            ].forEach(({ field, value }) => {
+                const label = value.previousElementSibling;
+                if (field.value === '<empty>') {
+                    value.classList.add('hidden');
+                    label.classList.add('hidden');
+                } else {
+                    value.classList.remove('hidden');
+                    label.classList.remove('hidden');
+                }
+            });
+        }
+
+        // Event listeners for fields
+        field1.addEventListener('change', () => {
+            updateValues(field1, value1);
+            updateFieldsDropdown();
+            toggleValueVisibility();
+        });
+
+        field2.addEventListener('change', () => {
+            updateValues(field2, value2);
+            updateFieldsDropdown();
+            toggleValueVisibility();
+        });
+
+        field3.addEventListener('change', () => {
+            updateValues(field3, value3);
+            updateFieldsDropdown();
+            toggleValueVisibility();
+        });
+
+        // Generate and display URI
+        generateButton.addEventListener('click', () => {
+            const queryParts = [];
+            if (field1.value !== '<empty>' && value1.value) queryParts.push(`${field1.value}="${value1.value}"`);
+            if (field2.value !== '<empty>' && value2.value) queryParts.push(`${field2.value}="${value2.value}"`);
+            if (field3.value !== '<empty>' && value3.value) queryParts.push(`${field3.value}="${value3.value}"`);
+
+            const query = `{${queryParts.join(',')}}`;
+            const encodedQuery = encodeURIComponent(query);
+
+            const uri = `${currentDomain}/select/vmui/?#/?query=${encodedQuery}`;
+            resultFrame.src = uri;
+        });
+
+        // Initialize fields on page load
+        populateFields();
+    </script>
+</body>
+</html>
